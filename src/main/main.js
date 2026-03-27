@@ -184,6 +184,13 @@ function fmtDate(d) {
   return String(d).replace('T00:00:00.000Z', '').replace(/-/g, '.');
 }
 
+/** Strip species/portrait prefix from character keys like "HUMAN1_CHR_Firstname" → "Firstname" */
+function stripChrKey(key) {
+  const chrIdx = key.indexOf('_CHR_');
+  if (chrIdx !== -1) return key.slice(chrIdx + 5).replace(/_/g, ' ');
+  return null;
+}
+
 /** Resolve a PDX name object {key, literal, variables} to a human string. */
 function resolveName(nameObj) {
   if (!nameObj) return null;
@@ -195,6 +202,17 @@ function resolveName(nameObj) {
   if (key.startsWith('SPEC_')) return key.slice(5).replace(/_pl$/, '').replace(/_/g, ' ');
   if (key.startsWith('PRESCRIPTED_species_name_')) return key.slice(25).replace(/_/g, ' ');
   if (key.startsWith('PRESCRIPTED_')) return key.slice(12).replace(/_/g, ' ');
+  const chrStripped = stripChrKey(key);
+  if (chrStripped) {
+    // If this key also has variables (e.g. %LEADER_2% format with _CHR_ parts), resolve those
+    if (nameObj.variables?.length) {
+      const parts = nameObj.variables
+        .map(v => v?.value ? resolveLeaf(v.value) : null)
+        .filter(Boolean);
+      if (parts.length) return parts.join(' ');
+    }
+    return chrStripped;
+  }
   // For format keys (e.g. %ADJ%, war_vs_adjectives) try to build from variables
   if (nameObj.variables?.length) {
     const parts = nameObj.variables
@@ -216,11 +234,20 @@ function resolveLeaf(nameObj) {
   if (key.startsWith('NAME_')) return key.slice(5).replace(/_/g, ' ');
   if (key.startsWith('SPEC_')) return key.slice(5).replace(/_pl$/, '').replace(/_/g, ' ');
   if (key.startsWith('PRESCRIPTED_')) return key.slice(12).replace(/_/g, ' ');
+  const chrStripped = stripChrKey(key);
+  if (chrStripped) {
+    if (nameObj.variables?.length) {
+      const parts = nameObj.variables
+        .map(v => v?.value ? resolveLeaf(v.value) : null)
+        .filter(Boolean);
+      if (parts.length) return parts.join(' ');
+    }
+    return chrStripped;
+  }
   if (nameObj.variables?.length) {
     const parts = nameObj.variables
       .map(v => v?.value ? resolveLeaf(v.value) : null)
       .filter(Boolean);
-    // If key is a plain word (not a format placeholder), prepend it
     const prefix = (!key.startsWith('%') && !key.includes('_')) ? key : null;
     return [prefix, ...parts].filter(Boolean).join(' ');
   }
@@ -260,11 +287,15 @@ async function parseAndExtract(gamestateRaw, metaRaw, fileName) {
   const countries = gs.country ?? {};
   const nameMap = buildNameMap(countries);
 
-  const parsed    = extractParsed(gs, playerCountryId, pc, nameMap);
-  const diplomacy = extractDiplomacy(gs, playerCountryId, pc, countries, nameMap, parsed._warParticipants);
-  const systems   = extractSystems(gs, playerCountryId, nameMap);
-  const colonies  = extractColonies(gs, playerCountryId);
-  const factions  = extractFactions(gs, playerCountryId);
+  const parsed       = extractParsed(gs, playerCountryId, pc, nameMap);
+  const diplomacy    = extractDiplomacy(gs, playerCountryId, pc, countries, nameMap, parsed._warParticipants);
+  const systems      = extractSystems(gs, playerCountryId, nameMap);
+  const colonies     = extractColonies(gs, playerCountryId);
+  const factions     = extractFactions(gs, playerCountryId);
+  const leaders      = extractLeaders(gs, playerCountryId, pc, nameMap);
+  const situations   = extractSituations(gs, playerCountryId);
+  const situationLog = extractSituationLog(gs, playerCountryId, pc);
+  const eventChains  = extractEventChains(gs, playerCountryId, pc);
 
   // Clean internal fields before returning
   delete parsed._warParticipants;
@@ -276,7 +307,7 @@ async function parseAndExtract(gamestateRaw, metaRaw, fileName) {
     meta = { date: fmtDate(m.date) || parsed.date, saveName: resolveName(m.name) || fileName || 'Unknown' };
   } catch (e) { /* meta parse optional */ }
 
-  return { parsed, meta, diplomacy, systems, colonies, factions };
+  return { parsed, meta, diplomacy, systems, colonies, factions, leaders, situations, situationLog, eventChains };
 }
 
 // ─── Extraction Helpers ───────────────────────────────────────────────────────
@@ -308,7 +339,8 @@ function extractParsed(gs, playerCountryId, pc, nameMap) {
     const name = resolveName(w.name) || `War ${wid}`;
     const attackers = toArr(w.attackers).map(a => String(a.country)).filter(Boolean);
     const defenders = toArr(w.defenders).map(d => String(d.country)).filter(Boolean);
-    wars.push({ name, attacker: attackers[0] || '?', defender: defenders[0] || '?' });
+    const playerInvolved = attackers.includes(playerCountryId) || defenders.includes(playerCountryId);
+    if (playerInvolved) wars.push({ name, attacker: attackers[0] || '?', defender: defenders[0] || '?' });
     for (const cid of [...attackers, ...defenders]) {
       if (!warParticipants[cid]) warParticipants[cid] = new Set();
       warParticipants[cid].add(name);
@@ -486,6 +518,255 @@ function extractFactions(gs, playerCountryId) {
   return factions;
 }
 
+/** Resolve a ship name, stripping empire-specific prefix patterns like "ship_prefix_humans1" */
+function resolveShipName(nameObj) {
+  if (!nameObj) return null;
+  if (typeof nameObj === 'string') return nameObj || null;
+  // Ship names often have format: {key: "SPEC_SHIP_Scout", variables: [{value: {key:"ship_prefix_humans1"}}]}
+  // We want just the meaningful part — try variables that aren't prefix/suffix boilerplate
+  if (nameObj.variables?.length) {
+    const parts = nameObj.variables
+      .map(v => {
+        if (!v?.value) return null;
+        const k = v.value.key || '';
+        if (k.startsWith('ship_prefix_') || k.startsWith('ship_suffix_')) return null;
+        return resolveLeaf(v.value);
+      })
+      .filter(Boolean);
+    if (parts.length) return parts.join(' ');
+  }
+  return resolveName(nameObj);
+}
+
+function extractLeaders(gs, playerCountryId, pc, nameMap) {
+  const allLeaders = gs.leaders ?? {};
+  const allShips   = gs.ships   ?? {};
+  const allFleets  = gs.fleet   ?? {};
+  const planets    = gs.planets?.planet ?? {};
+
+  // Build set of player-owned fleet IDs
+  const playerFleetIds = new Set();
+  for (const ref of toArr(pc.fleets_manager?.owned_fleets)) {
+    playerFleetIds.add(String(ref?.fleet ?? ref));
+  }
+
+  // leaderId → ship assignment (science ships etc.)
+  const shipLeaderMap = {};
+  for (const [sid, ship] of Object.entries(allShips)) {
+    if (!ship?.leader) continue;
+    if (!playerFleetIds.has(String(ship.fleet ?? ''))) continue;
+    shipLeaderMap[String(ship.leader)] = {
+      shipId: sid,
+      shipName: resolveShipName(ship.name) || `Ship ${sid}`
+    };
+  }
+
+  // leaderId → fleet assignment (admirals)
+  const fleetLeaderMap = {};
+  for (const fid of playerFleetIds) {
+    const fleet = allFleets[fid];
+    if (!fleet?.leader) continue;
+    const shipCount = toArr(fleet.ships).length;
+    fleetLeaderMap[String(fleet.leader)] = {
+      fleetId: fid,
+      fleetName: resolveName(fleet.name) || `Fleet ${fid}`,
+      shipCount
+    };
+  }
+
+  // leaderId → planet assignment (governors)
+  const govPlanetMap = {};
+  for (const [pid, p] of Object.entries(planets)) {
+    if (!p?.governor || String(p.owner) !== playerCountryId) continue;
+    govPlanetMap[String(p.governor)] = {
+      planetId: pid,
+      planetName: resolveName(p.name) || `Planet ${pid}`
+    };
+  }
+
+  const rulerId = pc?.ruler != null ? String(pc.ruler) : null;
+
+  const leaders = [];
+  for (const [lid, l] of Object.entries(allLeaders)) {
+    if (!l || String(l.country) !== playerCountryId) continue;
+
+    // Stellaris 3.x+ stores leader names under name.full_names (a name object with _CHR_ keys)
+    const name = resolveName(l.name?.full_names) || resolveName(l.name) || `Leader ${lid}`;
+    const cls    = (l.class || 'unknown').toLowerCase();
+    const skill  = (l.level ?? l.skill ?? 0) + (l.bonus_skill_level ?? 0);
+    const age    = Math.round(l.age || 0);
+    const traits = toArr(l.traits)
+      .map(t => String(t)
+        .replace(/^(gpm_|paragon_)?leader_trait_/, '')
+        .replace(/^trait_(ruler|governor|admiral|scientist|general|official|commander)_/, '')
+        .replace(/^trait_/, '')
+        .replace(/_/g, ' ')
+        .trim()
+      )
+      .filter(Boolean);
+
+    let assignment = null;
+    if (shipLeaderMap[lid])  assignment = { type: 'ship',   ...shipLeaderMap[lid] };
+    else if (fleetLeaderMap[lid]) assignment = { type: 'fleet', ...fleetLeaderMap[lid] };
+    else if (govPlanetMap[lid])   assignment = { type: 'planet', ...govPlanetMap[lid] };
+
+    leaders.push({ id: lid, name, class: cls, skill, age, traits, assignment, isRuler: lid === rulerId });
+  }
+
+  const classOrder = { ruler: 0, admiral: 1, commander: 1, scientist: 2, governor: 3, official: 3, manager: 3, general: 4, envoy: 5 };
+  leaders.sort((a, b) => {
+    if (a.isRuler !== b.isRuler) return a.isRuler ? -1 : 1;
+    const ca = classOrder[a.class] ?? 9, cb = classOrder[b.class] ?? 9;
+    if (ca !== cb) return ca - cb;
+    return b.skill - a.skill;
+  });
+
+  return leaders.slice(0, 50);
+}
+
+// ─── Situation Log Extractors ─────────────────────────────────────────────────
+
+/**
+ * Extract event chains and special projects from pc.events.
+ * Returns { active, completed, specialProjects }.
+ *   active[]           — chains currently in progress
+ *   completed[]        — chain names that have been finished
+ *   specialProjects[]  — ongoing or pending special projects (anomaly outcomes, etc.)
+ */
+function extractEventChains(gs, playerCountryId, pc) {
+  const ev = pc.events ?? {};
+
+  // ── Active event chains ──────────────────────────────────────────────────────
+  const active = [];
+  for (const entry of toArr(ev.event_chain)) {
+    if (!entry || typeof entry !== 'object') continue;
+    const chainKey = String(entry.event_chain ?? '').replace(/_/g, ' ').trim();
+    if (!chainKey) continue;
+    // counter is an object like { mem_stars_surveyed: 3 } — flatten to readable string
+    let counter = null;
+    if (entry.counter && typeof entry.counter === 'object') {
+      const parts = Object.entries(entry.counter)
+        .map(([k, v]) => `${k.replace(/_/g, ' ')}: ${v}`);
+      if (parts.length) counter = parts.join(', ');
+    }
+    active.push({ chainKey, counter });
+  }
+
+  // ── Completed event chains ───────────────────────────────────────────────────
+  const completed = toArr(ev.completed_event_chain)
+    .filter(c => typeof c === 'string' && c.trim())
+    .map(c => String(c).replace(/_/g, ' ').trim());
+
+  // ── Special projects ─────────────────────────────────────────────────────────
+  // Stored in pc.events.special_project as array of { id, special_project, status, ... }
+  const specialProjects = [];
+  for (const sp of toArr(ev.special_project)) {
+    if (!sp || typeof sp !== 'object') continue;
+    const name   = String(sp.special_project ?? `project_${sp.id ?? '?'}`)
+      .replace(/_/g, ' ').trim();
+    const status = sp.status ?? null;   // "completed" | "in_progress" | undefined
+    specialProjects.push({ id: sp.id ?? null, name, status });
+  }
+
+  return { active, completed, specialProjects };
+}
+
+/**
+ * Extract active mechanical Situations (progress-bar driven events like
+ * Synthetic Evolution, AI Rebellion, crisis paths, etc.)
+ * Save structure: gs.situations.situations = { id: { country, type, progress, ... } }
+ */
+function extractSituations(gs, playerCountryId) {
+  // Situations are nested: gs.situations.situations
+  const allSituations = gs.situations?.situations ?? {};
+  const result = [];
+
+  for (const [sid, sit] of Object.entries(allSituations)) {
+    if (!sit || typeof sit !== 'object') continue;
+    const owner = sit.country != null ? String(sit.country) : sit.owner != null ? String(sit.owner) : null;
+    if (owner !== playerCountryId) continue;
+
+    const type            = String(sit.type ?? sit.key ?? `situation_${sid}`).replace(/_/g, ' ');
+    const progress        = typeof sit.progress          === 'number' ? Math.round(sit.progress) : null;
+    const monthlyProgress = typeof sit.last_month_progress === 'number'
+      ? Math.round(sit.last_month_progress * 10) / 10
+      : typeof sit.monthly_progress === 'number' ? Math.round(sit.monthly_progress * 10) / 10 : null;
+    const stage    = sit.current_stage != null ? String(sit.current_stage).replace(/_/g, ' ') : null;
+    const approach = sit.approach      != null ? String(sit.approach).replace(/_/g, ' ')      : null;
+    const outcome  = sit.outcome       != null ? String(sit.outcome).replace(/_/g, ' ')       : null;
+
+    result.push({ id: sid, type, progress, monthlyProgress, stage, approach, outcome });
+  }
+
+  return result;
+}
+
+/**
+ * Extract situation-log contents:
+ *   - Archaeological sites   (gs.archaeological_sites.sites)
+ *   - First contacts         (gs.first_contacts.contacts)
+ *   - Astral rifts           (gs.astral_rifts.rifts)
+ * All containers are nested one level deep in the save file.
+ */
+function extractSituationLog(gs, playerCountryId, pc) {
+  const nameMap = buildNameMap(gs.country ?? {});
+
+  // ── Archaeological Sites ─────────────────────────────────────────────────────
+  // gs.archaeological_sites.sites = { id: { type, index, clues, days_left, locked, last_excavator_country, ... } }
+  const archaeologicalSites = [];
+  const allSites = gs.archaeological_sites?.sites ?? {};
+  for (const [aid, site] of Object.entries(allSites)) {
+    if (!site || typeof site !== 'object') continue;
+    if (String(site.last_excavator_country) !== playerCountryId) continue;
+
+    const type      = String(site.type ?? `site_${aid}`).replace(/^site_/, '').replace(/_/g, ' ');
+    const chapter   = site.index ?? 0;
+    const clues     = site.clues ?? 0;
+    const daysLeft  = site.days_left ?? null;
+    const locked    = !!site.locked;
+
+    archaeologicalSites.push({ id: aid, name: type, chapter, clues, daysLeft, locked });
+  }
+
+  // ── First Contacts ───────────────────────────────────────────────────────────
+  // gs.first_contacts.contacts = { id: { owner, country, stage, status, clues, days_left, ... } }
+  const firstContacts = [];
+  const allContacts = gs.first_contacts?.contacts ?? {};
+  for (const [fcid, fc] of Object.entries(allContacts)) {
+    if (!fc || typeof fc !== 'object') continue;
+    if (String(fc.owner) !== playerCountryId) continue;
+
+    const targetId   = fc.country != null ? String(fc.country) : null;
+    const targetName = targetId ? (nameMap[targetId] || `Country ${targetId}`) : 'Unknown';
+    const stage      = fc.stage != null ? String(fc.stage).replace(/_/g, ' ') : null;
+    const status     = fc.status ?? null;
+    const clues      = fc.clues ?? null;
+    const daysLeft   = fc.days_left ?? null;
+
+    firstContacts.push({ id: fcid, target: targetName, stage, status, clues, daysLeft });
+  }
+
+  // ── Astral Rifts ─────────────────────────────────────────────────────────────
+  // gs.astral_rifts.rifts = { id: { owner, type, clues, days_left, difficulty, status, ... } }
+  const astralRifts = [];
+  const allRifts = gs.astral_rifts?.rifts ?? {};
+  for (const [rid, rift] of Object.entries(allRifts)) {
+    if (!rift || typeof rift !== 'object') continue;
+    if (String(rift.owner) !== playerCountryId) continue;
+
+    const type     = rift.type != null ? String(rift.type).replace(/_/g, ' ') : `Astral Rift ${rid}`;
+    const clues    = rift.clues ?? 0;
+    const daysLeft = rift.days_left ?? null;
+    const diff     = rift.difficulty ?? null;
+    const status   = rift.status ?? null;
+    const active   = rift.explorer_fleet != null && rift.explorer_fleet !== 4294967295;
+
+    astralRifts.push({ id: rid, type, clues, daysLeft, difficulty: diff, status, active });
+  }
+
+  return { archaeologicalSites, firstContacts, astralRifts };
+}
+
 // ─── System Prompt Builder ────────────────────────────────────────────────────
 function buildSystemPrompt(gameContext) {
   let context = '';
@@ -497,10 +778,11 @@ function buildSystemPrompt(gameContext) {
     const col = gameContext.colonies  || [];
     const fac = gameContext.factions  || [];
     const sys = gameContext.systems   || [];
+    const empireName = gameContext.empireNameOverride || p.playerName;
 
     context = `\nCURRENT GAME STATE:
 - Date: ${p.date}
-- Empire: ${p.playerName}
+- Empire: ${empireName}
 - Wars: ${p.wars?.length ? p.wars.map(w => w.name).join(', ') : 'None'}
 - Fleets: ${p.fleetCount}  Colonies: ${p.planetCount}
 - Monthly Income: Energy ${res.energy ?? '?'}, Minerals ${res.minerals ?? '?'}, Food ${res.food ?? '?'}, Alloys ${res.alloys ?? '?'}, CG ${res.consumer_goods ?? '?'}, Influence ${res.influence ?? '?'}, Unity ${res.unity ?? '?'}
@@ -546,8 +828,98 @@ function buildSystemPrompt(gameContext) {
       }
     }
 
-  } else if (gameContext?.manual) {
-    context = `\nCURRENT GAME STATE (player-provided):\n${gameContext.manual}\n`;
+    const lea = gameContext.leaders || [];
+    if (lea.length) {
+      context += '\nLEADERS:\n';
+      for (const l of lea) {
+        const stars  = '★'.repeat(Math.min(10, l.skill)) + '☆'.repeat(Math.max(0, Math.min(10, 10 - l.skill)));
+        const role   = l.isRuler ? 'Ruler' : (l.class.charAt(0).toUpperCase() + l.class.slice(1));
+        let assign   = '';
+        if (l.assignment?.type === 'fleet')  assign = ` — commanding "${l.assignment.fleetName}" (${l.assignment.shipCount} ships)`;
+        else if (l.assignment?.type === 'ship')   assign = ` — aboard "${l.assignment.shipName}"`;
+        else if (l.assignment?.type === 'planet') assign = ` — governing ${l.assignment.planetName}`;
+        const traitStr = l.traits.length ? ` [${l.traits.slice(0, 3).join(', ')}]` : '';
+        context += `  [${role}] ${l.name} ${stars}${assign}${traitStr}\n`;
+      }
+    }
+
+    const ec = gameContext.eventChains || {};
+    if (ec.active?.length) {
+      context += '\nACTIVE EVENT CHAINS:\n';
+      for (const c of ec.active) {
+        const ctr = c.counter ? ` [${c.counter}]` : '';
+        context += `  ${c.chainKey}${ctr}\n`;
+      }
+    }
+    if (ec.specialProjects?.length) {
+      const pending = ec.specialProjects.filter(p => p.status !== 'completed');
+      if (pending.length) {
+        context += '\nSPECIAL PROJECTS:\n';
+        for (const p of pending) {
+          const status = p.status ? ` (${p.status})` : ' (pending)';
+          context += `  ${p.name}${status}\n`;
+        }
+      }
+    }
+    if (ec.completed?.length) {
+      context += `\nCOMPLETED EVENT CHAINS: ${ec.completed.slice(0, 15).join(', ')}\n`;
+    }
+
+    const sits = gameContext.situations || [];
+    if (sits.length) {
+      context += '\nACTIVE SITUATIONS:\n';
+      for (const s of sits) {
+        const prog  = s.progress != null ? ` ${s.progress}%` : '';
+        const rate  = s.monthlyProgress != null ? ` (+${s.monthlyProgress}/mo)` : '';
+        const stage = s.stage    ? ` [${s.stage}]`    : '';
+        const appr  = s.approach ? ` approach: ${s.approach}` : '';
+        const out   = s.outcome  ? ` → outcome: ${s.outcome}` : '';
+        context += `  ${s.type}:${prog}${rate}${stage}${appr}${out}\n`;
+      }
+    }
+
+    const sl = gameContext.situationLog;
+    if (sl) {
+      if (sl.archaeologicalSites?.length) {
+        context += '\nARCHAEOLOGICAL SITES (player-excavated):\n';
+        for (const a of sl.archaeologicalSites) {
+          const chap   = ` ch.${a.chapter}`;
+          const clues  = a.clues ? ` ${a.clues} clues` : '';
+          const days   = a.daysLeft != null ? ` (~${a.daysLeft}d)` : '';
+          const locked = a.locked ? ' [locked]' : '';
+          context += `  ${a.name}:${chap}${clues}${days}${locked}\n`;
+        }
+      }
+
+      if (sl.firstContacts?.length) {
+        context += '\nFIRST CONTACTS:\n';
+        for (const fc of sl.firstContacts.slice(0, 20)) {
+          const stage  = fc.stage  ? ` [${fc.stage}]`        : '';
+          const status = fc.status ? ` (${fc.status})`       : '';
+          const clues  = fc.clues  != null ? ` ${fc.clues} clues` : '';
+          context += `  ${fc.target}:${stage}${status}${clues}\n`;
+        }
+      }
+
+      if (sl.astralRifts?.length) {
+        context += '\nASTRAL RIFTS:\n';
+        for (const r of sl.astralRifts) {
+          const active = r.active  ? ' [ACTIVE]'                 : '';
+          const clues  = r.clues   ? ` ${r.clues} clues`         : '';
+          const diff   = r.difficulty != null ? ` diff ${r.difficulty}` : '';
+          const status = r.status  ? ` (${r.status})`            : '';
+          context += `  ${r.type}${active}${status}${clues}${diff}\n`;
+        }
+      }
+    }
+
+  }
+
+  const manualBlocks = gameContext?.manualBlocks?.length ? gameContext.manualBlocks
+    : (gameContext?.manual && gameContext?.parsed ? [{ text: gameContext.manual }] : []);
+  if (manualBlocks.length) {
+    context += '\nADDITIONAL CONTEXT (player-provided):\n';
+    for (const b of manualBlocks) context += b.text + '\n';
   }
 
   return `You are the Galactic AI Advisor to a galactic empire in the 4X strategy game Stellaris. You operate as both a strategic counselor and an in-universe intelligence bureau — part military tactician, part economist, part diplomat, part imperial correspondent.
