@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(ls C:UsersYuyang HuDocumentsParadoxAIsample_saves/*)",
+      "Bash(node -e \":*)",
+      "Bash(node --no-deprecation -e \":*)"
+    ]
+  }
+}

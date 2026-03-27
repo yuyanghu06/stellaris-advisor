@@ -1,0 +1,1132 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com;">
+  <title>Stellaris Advisor</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;600;700&family=Rajdhani:wght@300;400;500;600&family=Share+Tech+Mono&display=swap" rel="stylesheet">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --bg-void: #f0f4fc;
+      --bg-deep: #ffffff;
+      --bg-panel: #f7f9ff;
+      --bg-card: #ffffff;
+      --border: #dde6f5;
+      --border-glow: #3b82f6;
+      --accent-blue: #2563eb;
+      --accent-cyan: #0ea5e9;
+      --accent-gold: #d97706;
+      --accent-red: #ef4444;
+      --accent-green: #10b981;
+      --text-primary: #0f172a;
+      --text-secondary: #334155;
+      --text-muted: #94a3b8;
+      --shadow-sm: 0 1px 3px rgba(15,23,42,0.06), 0 1px 2px rgba(15,23,42,0.04);
+      --shadow-md: 0 4px 12px rgba(15,23,42,0.08), 0 2px 4px rgba(15,23,42,0.04);
+      --glow-blue: 0 0 0 3px rgba(37,99,235,0.12);
+    }
+    html, body {
+      width: 100%; height: 100%; overflow: hidden;
+      background: var(--bg-void); color: var(--text-primary);
+      font-family: 'Rajdhani', sans-serif; font-size: 15px;
+      background-image:
+        linear-gradient(rgba(37,99,235,0.035) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(37,99,235,0.035) 1px, transparent 1px);
+      background-size: 40px 40px;
+    }
+    #app { display: flex; flex-direction: column; width: 100vw; height: 100vh; }
+
+    /* Titlebar */
+    .titlebar {
+      height: 32px; min-height: 32px; display: flex; align-items: center; padding: 0 16px;
+      -webkit-app-region: drag; background: var(--bg-deep);
+      border-bottom: 1px solid var(--border);
+      box-shadow: var(--shadow-sm);
+    }
+    .titlebar-title {
+      font-family: 'Cinzel', serif; font-size: 10px; letter-spacing: 4px;
+      color: var(--accent-blue); text-transform: uppercase; font-weight: 600;
+    }
+
+    /* Layout */
+    .body { flex: 1; display: flex; overflow: hidden; }
+    .sidebar {
+      width: 300px; min-width: 260px; background: var(--bg-panel);
+      border-right: 1px solid var(--border); display: flex;
+      flex-direction: column; overflow-y: auto;
+      box-shadow: var(--shadow-sm);
+    }
+    .sidebar::-webkit-scrollbar { width: 4px; }
+    .sidebar::-webkit-scrollbar-track { background: transparent; }
+    .sidebar::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+    .ss { padding: 14px 16px; border-bottom: 1px solid var(--border); }
+    .sl {
+      font-family: 'Cinzel', serif; font-size: 8px; letter-spacing: 4px;
+      color: var(--accent-blue); text-transform: uppercase; margin-bottom: 10px;
+      opacity: 0.7;
+    }
+
+    /* API Key row */
+    .key-row { display: flex; gap: 6px; }
+    .key-input {
+      flex: 1; background: var(--bg-deep); border: 1px solid var(--border);
+      border-radius: 6px; color: var(--text-primary);
+      font-family: 'Share Tech Mono', monospace; font-size: 11px;
+      padding: 7px 10px; outline: none; transition: border-color 0.2s, box-shadow 0.2s;
+    }
+    .key-input:focus { border-color: var(--accent-blue); box-shadow: var(--glow-blue); }
+    .key-input::placeholder { color: var(--text-muted); }
+
+    /* Buttons */
+    .btn {
+      padding: 7px 14px; border: 1px solid var(--border-glow); border-radius: 6px;
+      background: transparent; color: var(--accent-blue);
+      font-family: 'Rajdhani', sans-serif; font-size: 13px; font-weight: 600;
+      cursor: pointer; transition: all 0.18s; white-space: nowrap;
+    }
+    .btn:hover { background: var(--accent-blue); color: #fff; border-color: var(--accent-blue); }
+    .btn.amber { border-color: var(--accent-gold); color: var(--accent-gold); }
+    .btn.amber:hover { background: var(--accent-gold); color: #fff; }
+    .btn.full { width: 100%; }
+
+    /* Status row */
+    .srow { display: flex; align-items: center; margin-top: 8px; }
+    .sdot {
+      display: inline-block; width: 7px; height: 7px; border-radius: 50%;
+      margin-right: 7px; background: var(--text-muted); flex-shrink: 0;
+      transition: background 0.3s;
+    }
+    .sdot.ok { background: var(--accent-green); box-shadow: 0 0 8px rgba(16,185,129,0.5); }
+    .sdot.err { background: var(--accent-red); box-shadow: 0 0 8px rgba(239,68,68,0.4); }
+    .sdot.pulse {
+      background: var(--accent-green);
+      box-shadow: 0 0 8px rgba(16,185,129,0.5);
+      animation: dotPulse 2.5s infinite;
+    }
+    @keyframes dotPulse {
+      0%, 100% { opacity: 1; box-shadow: 0 0 8px rgba(16,185,129,0.5); }
+      50%       { opacity: 0.4; box-shadow: 0 0 2px rgba(16,185,129,0.2); }
+    }
+    .stxt { font-size: 12px; color: var(--text-secondary); }
+
+    /* Tabs */
+    .tabs { display: flex; gap: 4px; margin-bottom: 10px; }
+    .tab {
+      padding: 5px 10px; border-radius: 5px; border: 1px solid var(--border);
+      background: transparent; color: var(--text-muted);
+      font-family: 'Rajdhani', sans-serif; font-size: 11px; font-weight: 600;
+      cursor: pointer; transition: all 0.15s; text-transform: uppercase; letter-spacing: 1.5px;
+    }
+    .tab.active {
+      border-color: var(--accent-blue); color: var(--accent-blue);
+      background: rgba(37,99,235,0.07);
+    }
+    .tab-pane { display: none; }
+    .tab-pane.active { display: block; }
+
+    /* Monitor section */
+    .monitor-folder {
+      font-family: 'Share Tech Mono', monospace; font-size: 10px;
+      color: var(--text-muted); margin-bottom: 9px; word-break: break-all; line-height: 1.5;
+    }
+    .monitor-folder span { color: var(--text-secondary); }
+    .monitor-save {
+      background: var(--bg-deep); border: 1px solid var(--border); border-radius: 6px;
+      padding: 8px 11px; margin-bottom: 9px; display: none;
+      box-shadow: var(--shadow-sm);
+    }
+    .monitor-save.visible { display: block; }
+    .monitor-save-name {
+      font-family: 'Share Tech Mono', monospace; font-size: 11px;
+      color: var(--accent-blue); margin-bottom: 3px;
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+    .monitor-age { font-size: 11px; color: var(--text-muted); }
+    .monitor-error { font-size: 12px; color: var(--accent-red); margin-bottom: 8px; }
+    @keyframes flashUpdate {
+      0%   { background: rgba(16,185,129,0.12); border-color: var(--accent-green); }
+      100% { background: var(--bg-deep); border-color: var(--border); }
+    }
+    .flash { animation: flashUpdate 1.8s ease-out; }
+
+    /* Shared save-info stats block */
+    .save-info {
+      margin-top: 10px; padding: 10px; background: var(--bg-deep);
+      border: 1px solid var(--border); border-radius: 6px; display: none;
+      box-shadow: var(--shadow-sm);
+    }
+    .save-info.visible { display: block; }
+    .save-name {
+      font-family: 'Share Tech Mono', monospace; font-size: 11px; color: var(--accent-blue);
+      margin-bottom: 8px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+    .stats-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 5px; }
+    .si {
+      background: var(--bg-panel); border: 1px solid var(--border);
+      border-radius: 4px; padding: 5px 8px;
+    }
+    .slbl {
+      font-size: 9px; color: var(--text-muted); text-transform: uppercase;
+      letter-spacing: 1.5px; margin-bottom: 2px;
+    }
+    .sval {
+      font-family: 'Share Tech Mono', monospace; font-size: 13px; color: var(--accent-cyan);
+      font-weight: 600;
+    }
+    .war-item {
+      padding: 6px 10px; background: rgba(239,68,68,0.05);
+      border: 1px solid rgba(239,68,68,0.2); border-radius: 4px;
+      margin-bottom: 4px; font-size: 12px; color: var(--text-secondary);
+    }
+    .wname { color: var(--accent-red); font-weight: 600; }
+    .badge {
+      display: inline-block; padding: 3px 10px;
+      background: rgba(37,99,235,0.07); border: 1px solid rgba(37,99,235,0.2);
+      border-radius: 4px; font-size: 11px; color: var(--accent-blue);
+      margin-bottom: 8px; font-family: 'Cinzel', serif; letter-spacing: 1px;
+    }
+
+    /* Manual textarea */
+    .mtx {
+      width: 100%; background: var(--bg-deep); border: 1px solid var(--border);
+      border-radius: 6px; color: var(--text-primary);
+      font-family: 'Rajdhani', sans-serif; font-size: 13px;
+      padding: 8px 10px; resize: vertical; min-height: 90px; max-height: 160px;
+      outline: none; transition: border-color 0.2s, box-shadow 0.2s; line-height: 1.5;
+    }
+    .mtx:focus { border-color: var(--accent-blue); box-shadow: var(--glow-blue); }
+    .mtx::placeholder { color: var(--text-muted); }
+
+    /* Context confirmed banner */
+    #ctxSummary .ctx-confirmed {
+      font-size: 12px; color: var(--accent-green); display: flex; align-items: center; gap: 6px;
+    }
+
+    /* ── Rich Data Panels ────────────────────────────────────────────── */
+    .rich-panel {
+      border-bottom: 1px solid var(--border);
+    }
+    .rich-panel-header {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 10px 16px; cursor: pointer; user-select: none;
+      background: var(--bg-deep);
+      transition: background 0.15s;
+    }
+    .rich-panel-header:hover { background: rgba(37,99,235,0.04); }
+    .rich-panel-title {
+      font-family: 'Cinzel', serif; font-size: 8px; letter-spacing: 4px;
+      color: var(--accent-blue); text-transform: uppercase; font-weight: 600; opacity: 0.85;
+    }
+    .rich-panel-chevron {
+      font-size: 9px; color: var(--text-muted); transition: transform 0.2s;
+    }
+    .rich-panel-chevron.open { transform: rotate(90deg); }
+    .rich-panel-body { display: none; padding: 0 12px 12px; }
+    .rich-panel-body.open { display: block; }
+    .rich-panel-empty {
+      font-size: 11px; color: var(--text-muted); text-align: center;
+      padding: 12px 0; font-style: italic;
+    }
+
+    /* DIPLOMACY panel */
+    .diplo-table { width: 100%; border-collapse: collapse; margin-top: 6px; }
+    .diplo-table th {
+      font-size: 8px; letter-spacing: 2px; text-transform: uppercase;
+      color: var(--text-muted); font-family: 'Cinzel', serif;
+      padding: 4px 4px 6px; text-align: left; border-bottom: 1px solid var(--border);
+    }
+    .diplo-table td {
+      padding: 5px 4px; border-bottom: 1px solid rgba(221,230,245,0.5);
+      font-size: 11px; vertical-align: middle;
+    }
+    .diplo-name { color: var(--text-primary); font-weight: 600; font-size: 11px; max-width: 90px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .att-badge {
+      display: inline-block; padding: 2px 5px; border-radius: 3px;
+      font-size: 9px; font-weight: 700; letter-spacing: 0.5px; text-transform: uppercase;
+    }
+    .att-friendly { background: rgba(16,185,129,0.12); color: var(--accent-green); border: 1px solid rgba(16,185,129,0.3); }
+    .att-neutral  { background: rgba(217,119,6,0.10); color: var(--accent-gold); border: 1px solid rgba(217,119,6,0.25); }
+    .att-hostile  { background: rgba(239,68,68,0.10); color: var(--accent-red); border: 1px solid rgba(239,68,68,0.25); }
+    .opinion-pos { color: var(--accent-green); font-family: 'Share Tech Mono', monospace; font-size: 11px; font-weight: 700; }
+    .opinion-neg { color: var(--accent-red); font-family: 'Share Tech Mono', monospace; font-size: 11px; font-weight: 700; }
+    .opinion-neu { color: var(--text-muted); font-family: 'Share Tech Mono', monospace; font-size: 11px; }
+    .agree-badges { display: flex; gap: 2px; flex-wrap: wrap; }
+    .agree-badge {
+      display: inline-block; padding: 1px 3px; border-radius: 2px;
+      font-size: 8px; font-weight: 700; background: rgba(37,99,235,0.1);
+      color: var(--accent-blue); border: 1px solid rgba(37,99,235,0.2);
+    }
+    .war-badge {
+      display: inline-block; padding: 1px 4px; border-radius: 2px;
+      font-size: 8px; font-weight: 700; background: rgba(239,68,68,0.15);
+      color: var(--accent-red); border: 1px solid rgba(239,68,68,0.3);
+    }
+
+    /* SYSTEMS panel */
+    .systems-list {
+      max-height: 200px; overflow-y: auto; margin-top: 6px;
+    }
+    .systems-list::-webkit-scrollbar { width: 3px; }
+    .systems-list::-webkit-scrollbar-track { background: transparent; }
+    .systems-list::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+    .system-item {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 4px 6px; border-radius: 4px; margin-bottom: 2px;
+      border: 1px solid transparent;
+      transition: background 0.12s;
+    }
+    .system-item:hover { background: rgba(37,99,235,0.04); border-color: var(--border); }
+    .system-name {
+      font-family: 'Share Tech Mono', monospace; font-size: 10px;
+      color: var(--text-primary); font-weight: 600;
+    }
+    .system-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 130px; }
+    .system-name.player-owned  { color: var(--accent-blue); }
+    .system-name.foreign-owned { color: var(--text-secondary); }
+    .system-name.unclaimed     { color: var(--text-muted); }
+    .system-class { font-size: 9px; color: var(--text-muted); margin-left: 4px; flex-shrink: 0; }
+    .system-owner { font-size: 9px; color: var(--text-muted); max-width: 80px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .system-colony-dot {
+      width: 5px; height: 5px; border-radius: 50%;
+      background: var(--accent-green); flex-shrink: 0;
+    }
+    .system-meta { display: flex; align-items: center; gap: 5px; flex-shrink: 0; }
+
+    /* COLONIES panel */
+    .colony-card {
+      background: var(--bg-deep); border: 1px solid var(--border);
+      border-radius: 6px; padding: 9px 10px; margin-top: 6px;
+      box-shadow: var(--shadow-sm);
+    }
+    .colony-header { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 6px; }
+    .colony-name { font-weight: 700; font-size: 12px; color: var(--text-primary); }
+    .colony-class { font-size: 10px; color: var(--text-muted); margin-left: 5px; }
+    .colony-desig {
+      font-size: 9px; letter-spacing: 1px; text-transform: uppercase;
+      color: var(--accent-cyan); font-family: 'Cinzel', serif;
+    }
+    .stability-bar-wrap { margin-bottom: 5px; }
+    .stability-label { display: flex; justify-content: space-between; margin-bottom: 2px; }
+    .stability-label span { font-size: 9px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 1px; }
+    .stability-label .stability-val { font-family: 'Share Tech Mono', monospace; font-size: 10px; font-weight: 700; }
+    .stability-bar {
+      height: 4px; border-radius: 2px; background: var(--border);
+      overflow: hidden;
+    }
+    .stability-fill { height: 100%; border-radius: 2px; transition: width 0.3s; }
+    .stab-green { background: var(--accent-green); }
+    .stab-yellow { background: var(--accent-gold); }
+    .stab-red { background: var(--accent-red); }
+    .colony-stats { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 5px; }
+    .colony-chips { display: flex; gap: 4px; flex-wrap: wrap; margin-top: 4px; }
+    .dist-chip {
+      font-size: 9px; padding: 2px 5px; border-radius: 3px;
+      background: rgba(14,165,233,0.08); border: 1px solid rgba(14,165,233,0.2);
+      color: var(--accent-cyan); white-space: nowrap;
+    }
+    .res-chip {
+      font-size: 9px; padding: 2px 5px; border-radius: 3px;
+      background: rgba(37,99,235,0.07); border: 1px solid rgba(37,99,235,0.15);
+      color: var(--accent-blue); white-space: nowrap; font-family: 'Share Tech Mono', monospace;
+    }
+    .col-stat {
+      background: var(--bg-panel); border: 1px solid var(--border);
+      border-radius: 3px; padding: 2px 6px; font-size: 10px;
+    }
+    .col-stat-lbl { color: var(--text-muted); font-size: 8px; text-transform: uppercase; letter-spacing: 1px; }
+    .col-stat-val { font-family: 'Share Tech Mono', monospace; color: var(--accent-cyan); font-weight: 700; }
+
+    /* FACTIONS panel */
+    .faction-item {
+      background: var(--bg-deep); border: 1px solid var(--border);
+      border-radius: 6px; padding: 8px 10px; margin-top: 6px;
+      box-shadow: var(--shadow-sm);
+    }
+    .faction-header { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 5px; }
+    .faction-name { font-weight: 700; font-size: 12px; color: var(--text-primary); }
+    .faction-ethics { font-size: 9px; color: var(--text-muted); text-transform: capitalize; }
+    .faction-happ { font-family: 'Share Tech Mono', monospace; font-size: 11px; color: var(--accent-cyan); font-weight: 700; }
+    .support-bar-wrap { }
+    .support-label { display: flex; justify-content: space-between; margin-bottom: 2px; }
+    .support-label span { font-size: 9px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 1px; }
+    .support-label .support-val { font-family: 'Share Tech Mono', monospace; font-size: 10px; font-weight: 700; color: var(--accent-blue); }
+    .support-bar {
+      height: 4px; border-radius: 2px; background: var(--border); overflow: hidden;
+    }
+    .support-fill { height: 100%; border-radius: 2px; transition: width 0.3s; background: var(--accent-blue); }
+    .support-fill.high { background: var(--accent-green); }
+    .support-fill.low { background: var(--text-muted); }
+
+    /* Divider inside sidebar label area */
+    .sep { height: 1px; background: var(--border); margin: 4px 0 10px; }
+
+    /* Chat area */
+    .chat-area { flex: 1; display: flex; flex-direction: column; overflow: hidden; background: var(--bg-deep); }
+    .chat-header {
+      padding: 14px 20px; border-bottom: 1px solid var(--border);
+      background: var(--bg-deep); display: flex; align-items: center;
+      justify-content: space-between; box-shadow: var(--shadow-sm);
+    }
+    .cht { font-family: 'Cinzel', serif; font-size: 14px; color: var(--text-primary); font-weight: 600; }
+    .chs { font-size: 11px; color: var(--text-muted); margin-top: 3px; letter-spacing: 1px; text-transform: uppercase; }
+
+    /* Messages */
+    .messages { flex: 1; overflow-y: auto; padding: 24px 20px; display: flex; flex-direction: column; gap: 18px; }
+    .messages::-webkit-scrollbar { width: 4px; }
+    .messages::-webkit-scrollbar-track { background: transparent; }
+    .messages::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+    .message { display: flex; gap: 12px; max-width: 82%; animation: fadeIn 0.25s ease; }
+    @keyframes fadeIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
+    .message.user { align-self: flex-end; flex-direction: row-reverse; }
+    .avatar {
+      width: 34px; height: 34px; min-width: 34px; border-radius: 8px;
+      display: flex; align-items: center; justify-content: center; font-size: 15px;
+      border: 1px solid var(--border); background: var(--bg-panel); flex-shrink: 0;
+    }
+    .message.user .avatar { border-color: rgba(37,99,235,0.3); background: rgba(37,99,235,0.06); }
+    .message.advisor .avatar { border-color: rgba(14,165,233,0.3); background: rgba(14,165,233,0.06); }
+    .bubble { padding: 11px 15px; border-radius: 10px; line-height: 1.65; font-size: 14px; }
+    .message.user .bubble {
+      background: rgba(37,99,235,0.07); border: 1px solid rgba(37,99,235,0.18);
+      color: var(--text-primary); border-top-right-radius: 3px;
+      box-shadow: var(--shadow-sm);
+    }
+    .message.advisor .bubble {
+      background: var(--bg-card); border: 1px solid var(--border);
+      color: var(--text-primary); border-top-left-radius: 3px;
+      box-shadow: var(--shadow-sm);
+    }
+    .bubble strong { color: var(--accent-blue); font-weight: 600; }
+    .bubble em { color: var(--accent-cyan); font-style: normal; }
+    .sname { font-size: 9px; text-transform: uppercase; letter-spacing: 2.5px; margin-bottom: 5px; font-weight: 600; }
+    .message.user .sname { color: var(--accent-blue); text-align: right; }
+    .message.advisor .sname { color: var(--accent-cyan); }
+
+    /* Typing indicator */
+    .typing { display: none; align-items: center; gap: 5px; padding: 8px 20px; }
+    .typing.visible { display: flex; }
+    .dot { width: 5px; height: 5px; border-radius: 50%; background: var(--accent-blue); animation: dotBounce 1.2s infinite; }
+    .dot:nth-child(2) { animation-delay: 0.2s; }
+    .dot:nth-child(3) { animation-delay: 0.4s; }
+    @keyframes dotBounce {
+      0%, 60%, 100% { opacity: 0.25; transform: scale(0.8); }
+      30%            { opacity: 1;    transform: scale(1.2); }
+    }
+
+    /* Input area */
+    .input-area {
+      padding: 14px 20px; border-top: 1px solid var(--border);
+      background: var(--bg-deep); display: flex; gap: 10px; align-items: flex-end;
+    }
+    .chat-input {
+      flex: 1; background: var(--bg-panel); border: 1px solid var(--border);
+      border-radius: 8px; color: var(--text-primary);
+      font-family: 'Rajdhani', sans-serif; font-size: 14px;
+      padding: 10px 14px; resize: none; outline: none;
+      min-height: 44px; max-height: 120px; line-height: 1.5;
+      transition: border-color 0.2s, box-shadow 0.2s;
+    }
+    .chat-input:focus { border-color: var(--accent-blue); box-shadow: var(--glow-blue); }
+    .chat-input::placeholder { color: var(--text-muted); }
+    .send-btn {
+      width: 44px; height: 44px; border-radius: 8px; border: 1px solid var(--accent-blue);
+      background: var(--accent-blue); color: #fff; font-size: 16px; cursor: pointer;
+      transition: all 0.2s; display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+      box-shadow: 0 2px 8px rgba(37,99,235,0.25);
+    }
+    .send-btn:hover { background: #1d4ed8; box-shadow: 0 4px 12px rgba(37,99,235,0.4); }
+    .send-btn:disabled { opacity: 0.35; cursor: not-allowed; box-shadow: none; }
+
+    /* Welcome screen */
+    .welcome { text-align: center; padding: 48px 24px; color: var(--text-muted); }
+    .welcome .icon { font-size: 44px; margin-bottom: 16px; opacity: 0.6; }
+    .welcome h2 {
+      font-family: 'Cinzel', serif; font-size: 17px; color: var(--text-primary);
+      margin-bottom: 10px; font-weight: 600;
+    }
+    .welcome p { font-size: 13px; line-height: 1.7; max-width: 360px; margin: 0 auto; }
+    .qps { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; margin-top: 20px; }
+    .qp {
+      padding: 7px 14px; border: 1px solid var(--border); border-radius: 20px;
+      background: var(--bg-card); color: var(--text-secondary);
+      font-family: 'Rajdhani', sans-serif; font-size: 12px; font-weight: 500;
+      cursor: pointer; transition: all 0.2s; box-shadow: var(--shadow-sm);
+    }
+    .qp:hover {
+      border-color: var(--accent-blue); color: var(--accent-blue);
+      background: rgba(37,99,235,0.05); box-shadow: var(--glow-blue);
+    }
+
+    /* Toast */
+    .toast {
+      position: fixed; bottom: 80px; left: 50%; transform: translateX(-50%);
+      padding: 10px 20px; border-radius: 8px; font-size: 13px;
+      display: none; z-index: 100; white-space: nowrap;
+      box-shadow: var(--shadow-md);
+    }
+    .toast.visible { display: block; }
+    .toast.error { background: #fff1f2; border: 1px solid #fecdd3; color: var(--accent-red); }
+    .toast.info  { background: #f0fdf4; border: 1px solid #bbf7d0; color: #059669; }
+  </style>
+</head>
+<body>
+<div id="app">
+  <div class="titlebar">
+    <span class="titlebar-title">⬡ Galactic AI Advisor — Galactic Intelligence Bureau</span>
+  </div>
+  <div class="body">
+    <aside class="sidebar">
+
+      <!-- API Key -->
+      <div class="ss">
+        <div class="sl">OpenAI Connection</div>
+        <div class="key-row" id="keyRow">
+          <input type="password" class="key-input" id="apiKeyInput" placeholder="sk-..." />
+          <button class="btn" onclick="setApiKey()">Set</button>
+        </div>
+        <div class="srow">
+          <span class="sdot" id="apiDot"></span>
+          <span class="stxt" id="apiStatus">Not connected</span>
+        </div>
+      </div>
+
+      <!-- Game Context -->
+      <div class="ss">
+        <div class="sl">Game Context</div>
+        <div class="tabs">
+          <button class="tab active" id="tab-btn-auto"   onclick="switchTab('auto')">Auto</button>
+          <button class="tab"        id="tab-btn-save"   onclick="switchTab('save')">File</button>
+          <button class="tab"        id="tab-btn-manual" onclick="switchTab('manual')">Manual</button>
+        </div>
+
+        <!-- Auto Monitor -->
+        <div class="tab-pane active" id="tab-auto">
+          <div class="srow" style="margin-top:0;margin-bottom:10px;">
+            <span class="sdot" id="watchDot"></span>
+            <span class="stxt" id="watchStatus">Initializing…</span>
+          </div>
+          <div class="monitor-folder" id="monitorFolder"><span>No folder set</span></div>
+          <div class="monitor-save" id="monitorSave">
+            <div class="monitor-save-name" id="monitorSaveName"></div>
+            <div class="monitor-age" id="monitorAge"></div>
+          </div>
+          <div class="monitor-error" id="monitorError" style="display:none"></div>
+          <button class="btn full" onclick="changeFolder()">Change Folder</button>
+          <div class="save-info" id="autoSaveInfo">
+            <div class="badge" id="autoEmpireName"></div>
+            <div class="stats-grid" id="autoStatsGrid"></div>
+            <div id="autoWarsList"></div>
+          </div>
+        </div>
+
+        <!-- Manual file pick -->
+        <div class="tab-pane" id="tab-save">
+          <button class="btn amber full" onclick="loadSave()">Load Save File (.sav)</button>
+          <div class="save-info" id="saveInfo">
+            <div class="save-name" id="saveName"></div>
+            <div class="badge" id="empireName"></div>
+            <div class="stats-grid" id="statsGrid"></div>
+            <div id="warsList"></div>
+          </div>
+        </div>
+
+        <!-- Manual text -->
+        <div class="tab-pane" id="tab-manual">
+          <textarea class="mtx" id="manualCtx"
+            placeholder="Describe your empire's situation…&#10;e.g. Year 2350, Fanatic Materialist, 12 planets, at war with the Prethoryn Scourge, low alloys…"></textarea>
+          <button class="btn full" style="margin-top:8px" onclick="applyManual()">Apply Context</button>
+        </div>
+      </div>
+
+      <!-- Context confirmed -->
+      <div class="ss" id="ctxSummary" style="display:none">
+        <div class="sl">Status</div>
+        <div class="ctx-confirmed">
+          <span class="sdot ok"></span>
+          Advisor briefed on your empire
+        </div>
+      </div>
+
+      <!-- DIPLOMACY panel -->
+      <div class="rich-panel" id="panel-diplomacy">
+        <div class="rich-panel-header" onclick="togglePanel('diplomacy')">
+          <span class="rich-panel-title">Diplomacy</span>
+          <span class="rich-panel-chevron" id="chevron-diplomacy">&#9654;</span>
+        </div>
+        <div class="rich-panel-body" id="body-diplomacy">
+          <div class="rich-panel-empty" id="diplo-empty">No save loaded</div>
+          <table class="diplo-table" id="diplo-table" style="display:none">
+            <thead>
+              <tr>
+                <th>Empire</th>
+                <th>Att.</th>
+                <th>Opin.</th>
+                <th>Pacts</th>
+              </tr>
+            </thead>
+            <tbody id="diplo-tbody"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- SYSTEMS panel -->
+      <div class="rich-panel" id="panel-systems">
+        <div class="rich-panel-header" onclick="togglePanel('systems')">
+          <span class="rich-panel-title">Star Systems</span>
+          <span class="rich-panel-chevron" id="chevron-systems">&#9654;</span>
+        </div>
+        <div class="rich-panel-body" id="body-systems">
+          <div class="rich-panel-empty" id="systems-empty">No save loaded</div>
+          <div class="systems-list" id="systems-list" style="display:none"></div>
+        </div>
+      </div>
+
+      <!-- COLONIES panel -->
+      <div class="rich-panel" id="panel-colonies">
+        <div class="rich-panel-header" onclick="togglePanel('colonies')">
+          <span class="rich-panel-title">Colonies</span>
+          <span class="rich-panel-chevron" id="chevron-colonies">&#9654;</span>
+        </div>
+        <div class="rich-panel-body" id="body-colonies">
+          <div class="rich-panel-empty" id="colonies-empty">No save loaded</div>
+          <div id="colonies-list"></div>
+        </div>
+      </div>
+
+      <!-- FACTIONS panel -->
+      <div class="rich-panel" id="panel-factions">
+        <div class="rich-panel-header" onclick="togglePanel('factions')">
+          <span class="rich-panel-title">Pop Factions</span>
+          <span class="rich-panel-chevron" id="chevron-factions">&#9654;</span>
+        </div>
+        <div class="rich-panel-body" id="body-factions">
+          <div class="rich-panel-empty" id="factions-empty">No save loaded</div>
+          <div id="factions-list"></div>
+        </div>
+      </div>
+
+    </aside>
+
+    <main class="chat-area">
+      <div class="chat-header">
+        <div>
+          <div class="cht">Galactic AI Advisor</div>
+          <div class="chs">Strategic Analysis Division</div>
+        </div>
+        <button class="btn" style="font-size:11px;padding:5px 12px" onclick="clearChat()">Clear</button>
+      </div>
+      <div class="messages" id="messages">
+        <div class="welcome" id="welcomeMsg">
+          <div class="icon">⬡</div>
+          <h2>Galactic AI Advisor Standing By</h2>
+          <p>Load your save file or describe your situation, then ask anything about strategy, diplomacy, economy, or military affairs.</p>
+          <div class="qps">
+            <button class="qp" onclick="sendQuick('Assess my current military situation and threat level.')">Military Assessment</button>
+            <button class="qp" onclick="sendQuick('What should I prioritize economically right now?')">Economy Review</button>
+            <button class="qp" onclick="sendQuick('Analyze my diplomatic position. Who should I ally with?')">Diplomacy</button>
+            <button class="qp" onclick="sendQuick('What are the greatest risks to my empire right now?')">Risk Assessment</button>
+            <button class="qp" onclick="sendQuick('Give me a full strategic briefing.')">Full Briefing</button>
+          </div>
+        </div>
+      </div>
+      <div class="typing" id="typing">
+        <span style="font-size:11px;color:var(--text-muted);margin-right:6px;letter-spacing:1px;text-transform:uppercase;">Analyzing</span>
+        <div class="dot"></div><div class="dot"></div><div class="dot"></div>
+      </div>
+      <div class="input-area">
+        <textarea class="chat-input" id="chatInput" placeholder="Ask your advisor…" rows="1"
+          onkeydown="handleKey(event)" oninput="autoResize(this)"></textarea>
+        <button class="send-btn" id="sendBtn" onclick="sendMessage()">&#10148;</button>
+      </div>
+    </main>
+  </div>
+</div>
+<div class="toast" id="toast"></div>
+
+<script>
+  let msgs = [], gameCtx = null, loading = false;
+
+  // ── Panel toggle ──────────────────────────────────────────────────────────
+  function togglePanel(id) {
+    const body = document.getElementById('body-' + id);
+    const chevron = document.getElementById('chevron-' + id);
+    const isOpen = body.classList.contains('open');
+    body.classList.toggle('open', !isOpen);
+    chevron.classList.toggle('open', !isOpen);
+  }
+
+  // ── Tab switching ─────────────────────────────────────────────────────────
+  function switchTab(t) {
+    ['auto','save','manual'].forEach(n => {
+      document.getElementById('tab-btn-'+n).classList.toggle('active', n === t);
+      document.getElementById('tab-'+n).classList.toggle('active', n === t);
+    });
+  }
+
+  // ── Utilities ─────────────────────────────────────────────────────────────
+  function relativeTime(mtime) {
+    const d = Math.floor((Date.now() - mtime) / 1000);
+    if (d < 60) return 'just now';
+    if (d < 3600) return Math.floor(d/60) + 'm ago';
+    if (d < 86400) return Math.floor(d/3600) + 'h ago';
+    return Math.floor(d/86400) + 'd ago';
+  }
+
+  function si(l, v) {
+    return `<div class="si"><div class="slbl">${l}</div><div class="sval">${v}</div></div>`;
+  }
+
+  function fmtNum(v) {
+    if (v === undefined || v === null) return '?';
+    const n = parseFloat(v);
+    if (isNaN(n)) return String(v);
+    return Math.round(n).toLocaleString();
+  }
+
+  function renderStats(parsed, empireEl, gridEl, warsEl) {
+    const p = parsed, res = p.resources || {};
+    empireEl.textContent = p.playerName || 'Unknown Empire';
+    gridEl.innerHTML = [
+      si('Date', p.date || '?'),
+      si('Fleets', p.fleetCount || 0),
+      si('Planets', p.planetCount || 0),
+      si('Energy', fmtNum(res.energy)),
+      si('Minerals', fmtNum(res.minerals)),
+      si('Alloys', fmtNum(res.alloys)),
+      si('Goods', fmtNum(res.consumer_goods)),
+      si('Influence', fmtNum(res.influence))
+    ].join('');
+    warsEl.innerHTML = p.wars && p.wars.length
+      ? '<div style="font-size:9px;letter-spacing:2px;color:var(--accent-red);text-transform:uppercase;margin:8px 0 5px">⚔ Active Wars</div>'
+        + p.wars.map(w => `<div class="war-item"><span class="wname">${esc(w.name)}</span></div>`).join('')
+      : '<div style="font-size:12px;color:var(--text-muted);margin-top:6px">No active wars</div>';
+  }
+
+  function esc(s) {
+    return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  }
+
+  // ── Attitude classification ───────────────────────────────────────────────
+  function attitudeClass(att, opinion, isHostile) {
+    if (!att) att = '';
+    const a = att.toLowerCase();
+    if (isHostile || a.includes('hostile') || a.includes('rival') || a.includes('outraged') || a === 'belligerent') return 'att-hostile';
+    if (a.includes('friendly') || a.includes('allied') || a.includes('protective') || a.includes('loyal') || a.includes('overlord')) return 'att-friendly';
+    if (opinion < -50) return 'att-hostile';
+    if (opinion > 50) return 'att-friendly';
+    return 'att-neutral';
+  }
+
+  function attitudeLabel(att) {
+    if (!att || att === 'unknown') return '?';
+    return att.replace(/_/g,' ').substring(0, 8);
+  }
+
+  // ── Rich panels population ────────────────────────────────────────────────
+  function populateRichPanels(data) {
+    populateDiplomacy(data.diplomacy || []);
+    populateSystems(data.systems || []);
+    populateColonies(data.colonies || []);
+    populateFactions(data.factions || []);
+  }
+
+  function populateDiplomacy(diplomacy) {
+    const empty = document.getElementById('diplo-empty');
+    const table = document.getElementById('diplo-table');
+    const tbody = document.getElementById('diplo-tbody');
+
+    if (!diplomacy || diplomacy.length === 0) {
+      empty.style.display = 'block';
+      empty.textContent = 'No diplomatic data available';
+      table.style.display = 'none';
+      return;
+    }
+
+    empty.style.display = 'none';
+    table.style.display = 'table';
+    tbody.innerHTML = '';
+
+    for (const d of diplomacy.slice(0, 30)) {
+      const attCls = attitudeClass(d.attitude, d.opinion, d.isHostile);
+      const opnCls = d.opinion > 0 ? 'opinion-pos' : d.opinion < 0 ? 'opinion-neg' : 'opinion-neu';
+      const opnStr = d.opinion > 0 ? '+' + Math.round(d.opinion) : String(Math.round(d.opinion));
+
+      const agrees = [];
+      if (d.hasAlliance) agrees.push('<span class="agree-badge">A</span>');
+      if (d.hasNAP) agrees.push('<span class="agree-badge">NAP</span>');
+      if (d.hasRA) agrees.push('<span class="agree-badge">RA</span>');
+      if (d.hasMigration) agrees.push('<span class="agree-badge">MIG</span>');
+      if (d.hasCommercial) agrees.push('<span class="agree-badge">COM</span>');
+      if (d.atWar) agrees.push('<span class="war-badge">WAR</span>');
+
+      const tr = document.createElement('tr');
+      tr.innerHTML = `
+        <td><div class="diplo-name" title="${esc(d.name)}">${esc(d.name)}</div></td>
+        <td><span class="att-badge ${attCls}">${esc(attitudeLabel(d.attitude))}</span></td>
+        <td><span class="${opnCls}">${opnStr}</span></td>
+        <td><div class="agree-badges">${agrees.join('')}</div></td>
+      `;
+      tbody.appendChild(tr);
+    }
+  }
+
+  function populateSystems(systems) {
+    const empty = document.getElementById('systems-empty');
+    const list = document.getElementById('systems-list');
+
+    if (!systems || systems.length === 0) {
+      empty.style.display = 'block';
+      empty.textContent = 'No system data available';
+      list.style.display = 'none';
+      return;
+    }
+
+    empty.style.display = 'none';
+    list.style.display = 'block';
+    list.innerHTML = '';
+
+    // Player-owned first, then other colonized, then up to 80 unclaimed
+    const player   = systems.filter(s => s.isPlayerOwned);
+    const foreign  = systems.filter(s => s.isColonized && !s.isPlayerOwned);
+    const unclaim  = systems.filter(s => !s.isColonized).slice(0, Math.max(0, 80 - player.length - foreign.length));
+    const toShow   = [...player, ...foreign, ...unclaim];
+
+    for (const s of toShow) {
+      const nameCls = s.isPlayerOwned ? 'player-owned' : s.isColonized ? 'foreign-owned' : 'unclaimed';
+      const starCls = (s.starClass || 'unk').toUpperCase();
+      const ownerLabel = s.isPlayerOwned ? '' : (s.ownerName ? `<span class="system-owner">${esc(s.ownerName)}</span>` : '');
+      const div = document.createElement('div');
+      div.className = 'system-item';
+      div.innerHTML = `
+        <div style="display:flex;align-items:baseline;gap:0;overflow:hidden;flex:1;min-width:0">
+          <span class="system-name ${nameCls}" title="${esc(s.name)}">${esc(s.name)}</span>
+          <span class="system-class">${esc(starCls)}</span>
+        </div>
+        <div class="system-meta">
+          ${ownerLabel}
+          ${s.isColonized ? '<div class="system-colony-dot" title="Colonized"></div>' : ''}
+        </div>
+      `;
+      list.appendChild(div);
+    }
+  }
+
+  function populateColonies(colonies) {
+    const empty = document.getElementById('colonies-empty');
+    const list = document.getElementById('colonies-list');
+
+    if (!colonies || colonies.length === 0) {
+      empty.style.display = 'block';
+      empty.textContent = 'No colony data available';
+      list.innerHTML = '';
+      return;
+    }
+
+    empty.style.display = 'none';
+    list.innerHTML = '';
+
+    const DISTRICT_ICONS = {
+      district_city: '🏙', district_generator: '⚡', district_mining: '⛏',
+      district_farming: '🌾', district_nexus: '🔷', district_industrial: '🏭',
+      district_hab_housing: '🏠', district_hab_energy: '⚡', district_hab_research: '🔬'
+    };
+
+    for (const c of colonies.slice(0, 25)) {
+      const stab    = Math.round(c.stability || 0);
+      const stabCls = stab >= 70 ? 'stab-green' : stab >= 40 ? 'stab-yellow' : 'stab-red';
+      const stabClr = stab >= 70 ? 'var(--accent-green)' : stab >= 40 ? 'var(--accent-gold)' : 'var(--accent-red)';
+      const desig   = c.designation || 'general';
+      const cls     = (c.planetClass || 'unknown').replace(/^pc_/, '');
+
+      // Districts chips
+      const distChips = Object.entries(c.districtCounts || {}).map(([t, n]) => {
+        const icon = DISTRICT_ICONS[t] || '▪';
+        const label = t.replace('district_','').slice(0,4);
+        return `<span class="dist-chip">${icon} ${label}×${n}</span>`;
+      }).join('');
+
+      // Resource output chips (top 4 by value)
+      const resEntries = Object.entries(c.resources || {}).filter(([,v]) => v > 0);
+      resEntries.sort((a,b) => b[1]-a[1]);
+      const resChips = resEntries.slice(0, 4).map(([k, v]) => {
+        const label = k.replace(/_research$/,' res').replace(/_/g,' ').slice(0,6);
+        return `<span class="res-chip">${label} ${v}</span>`;
+      }).join('');
+
+      const div = document.createElement('div');
+      div.className = 'colony-card';
+      div.innerHTML = `
+        <div class="colony-header">
+          <div style="min-width:0">
+            <span class="colony-name">${esc(c.name)}</span>
+            <span class="colony-class">${esc(cls)}</span>
+          </div>
+          <span class="colony-desig">${esc(desig)}</span>
+        </div>
+        <div class="stability-bar-wrap">
+          <div class="stability-label">
+            <span>Stability</span>
+            <span class="stability-val" style="color:${stabClr}">${stab}%</span>
+          </div>
+          <div class="stability-bar"><div class="stability-fill ${stabCls}" style="width:${Math.min(100,stab)}%"></div></div>
+        </div>
+        <div class="colony-stats">
+          <div class="col-stat"><div class="col-stat-lbl">Pops</div><div class="col-stat-val">${c.popCount||0}</div></div>
+          <div class="col-stat"><div class="col-stat-lbl">Size</div><div class="col-stat-val">${c.size||0}</div></div>
+          <div class="col-stat"><div class="col-stat-lbl">Housing</div><div class="col-stat-val">${Math.round(c.freeHousing||0)}</div></div>
+          ${c.amenities>0?`<div class="col-stat"><div class="col-stat-lbl">Amen.</div><div class="col-stat-val">${Math.round(c.amenities)}</div></div>`:''}
+        </div>
+        ${distChips ? `<div class="colony-chips">${distChips}</div>` : ''}
+        ${resChips  ? `<div class="colony-chips">${resChips}</div>`  : ''}
+      `;
+      list.appendChild(div);
+    }
+  }
+
+  function populateFactions(factions) {
+    const empty = document.getElementById('factions-empty');
+    const list = document.getElementById('factions-list');
+
+    if (!factions || factions.length === 0) {
+      empty.style.display = 'block';
+      empty.textContent = 'No faction data available';
+      list.innerHTML = '';
+      return;
+    }
+
+    empty.style.display = 'none';
+    list.innerHTML = '';
+
+    // Sort by support descending
+    const sorted = [...factions].sort((a, b) => (b.support || 0) - (a.support || 0));
+
+    for (const f of sorted) {
+      const support = Math.min(100, Math.max(0, f.support || 0));
+      const supportCls = support > 40 ? 'high' : support < 15 ? 'low' : '';
+      const happiness = Math.round(f.happiness || 0);
+      const ethics = f.ethics || f.type || '';
+
+      const div = document.createElement('div');
+      div.className = 'faction-item';
+      div.innerHTML = `
+        <div class="faction-header">
+          <div>
+            <span class="faction-name">${esc(f.name)}</span>
+            ${ethics ? `<span class="faction-ethics"> — ${esc(ethics)}</span>` : ''}
+          </div>
+          <span class="faction-happ">${happiness}% hap.</span>
+        </div>
+        <div class="support-bar-wrap">
+          <div class="support-label">
+            <span>Support</span>
+            <span class="support-val">${Math.round(support)}%</span>
+          </div>
+          <div class="support-bar">
+            <div class="support-fill ${supportCls}" style="width:${support}%"></div>
+          </div>
+        </div>
+      `;
+      list.appendChild(div);
+    }
+  }
+
+  // ── Auto Monitor ──────────────────────────────────────────────────────────
+  function applyAutoSave(data) {
+    if (!data || !data.success) {
+      document.getElementById('watchDot').className = 'sdot err';
+      document.getElementById('watchStatus').textContent = 'No saves found';
+      document.getElementById('monitorError').textContent = data ? data.error : 'Unknown error';
+      document.getElementById('monitorError').style.display = 'block';
+      document.getElementById('monitorSave').classList.remove('visible');
+      document.getElementById('autoSaveInfo').classList.remove('visible');
+      return;
+    }
+    document.getElementById('watchDot').className = 'sdot pulse';
+    document.getElementById('watchStatus').textContent = 'Watching';
+    document.getElementById('monitorError').style.display = 'none';
+
+    const saveEl = document.getElementById('monitorSave');
+    saveEl.classList.add('visible');
+    document.getElementById('monitorSaveName').textContent = data.fileName;
+    document.getElementById('monitorAge').textContent = 'Last save: ' + relativeTime(data.updatedAt);
+
+    renderStats(data.parsed,
+      document.getElementById('autoEmpireName'),
+      document.getElementById('autoStatsGrid'),
+      document.getElementById('autoWarsList')
+    );
+    document.getElementById('autoSaveInfo').classList.add('visible');
+
+    gameCtx = {
+      type: 'save',
+      parsed: data.parsed,
+      diplomacy: data.diplomacy || [],
+      systems: data.systems || [],
+      colonies: data.colonies || [],
+      factions: data.factions || []
+    };
+    document.getElementById('ctxSummary').style.display = 'block';
+
+    populateRichPanels(data);
+  }
+
+  function setMonitorFolder(folder) {
+    if (!folder) return;
+    const parts = folder.replace(/\\/g, '/').split('/');
+    const short = parts.length > 4 ? '…/' + parts.slice(-3).join('/') : folder.replace(/\\/g, '/');
+    document.getElementById('monitorFolder').innerHTML = '<span>' + short + '</span>';
+  }
+
+  async function initAutoMonitor() {
+    const r = await window.advisor.getAutoSave();
+    if (r.folder) setMonitorFolder(r.folder);
+    if (r.save) {
+      applyAutoSave(r.save);
+    } else {
+      document.getElementById('watchDot').className = 'sdot err';
+      document.getElementById('watchStatus').textContent = 'Folder not found';
+      document.getElementById('monitorError').textContent = 'Default save folder not found. Click "Change Folder".';
+      document.getElementById('monitorError').style.display = 'block';
+    }
+
+    window.advisor.onSaveUpdated((data) => {
+      applyAutoSave(data);
+      document.getElementById('monitorAge').textContent = 'Last save: just now';
+      const saveEl = document.getElementById('monitorSave');
+      saveEl.classList.remove('flash');
+      void saveEl.offsetWidth;
+      saveEl.classList.add('flash');
+      toast('Save detected — context updated.', 'info');
+    });
+  }
+
+  async function changeFolder() {
+    const r = await window.advisor.selectSaveFolder();
+    if (r.canceled) return;
+    if (!r.success) return toast('Error: ' + r.error, 'error');
+    setMonitorFolder(r.folder);
+    applyAutoSave(r.save);
+    toast('Folder set. Watching for new saves.', 'info');
+  }
+
+  // ── API Key ───────────────────────────────────────────────────────────────
+  async function setApiKey() {
+    const key = document.getElementById('apiKeyInput').value.trim();
+    if (!key) return toast('Enter an API key.', 'error');
+    document.getElementById('apiStatus').textContent = 'Connecting…';
+    const r = await window.advisor.setApiKey(key);
+    const dot = document.getElementById('apiDot'), st = document.getElementById('apiStatus');
+    if (r.success) { dot.className = 'sdot ok'; st.textContent = 'Connected'; }
+    else { dot.className = 'sdot err'; st.textContent = 'Invalid key'; toast('Key error: ' + r.error, 'error'); }
+  }
+
+  // ── Manual save file ──────────────────────────────────────────────────────
+  async function loadSave() {
+    const r = await window.advisor.openSaveFile();
+    if (r.canceled) return;
+    if (!r.success) return toast('Parse error: ' + r.error, 'error');
+
+    gameCtx = {
+      type: 'save',
+      parsed: r.parsed,
+      diplomacy: r.diplomacy || [],
+      systems: r.systems || [],
+      colonies: r.colonies || [],
+      factions: r.factions || []
+    };
+
+    document.getElementById('saveInfo').classList.add('visible');
+    document.getElementById('saveName').textContent = r.fileName;
+    renderStats(r.parsed,
+      document.getElementById('empireName'),
+      document.getElementById('statsGrid'),
+      document.getElementById('warsList')
+    );
+    document.getElementById('ctxSummary').style.display = 'block';
+
+    populateRichPanels(r);
+  }
+
+  function applyManual() {
+    const t = document.getElementById('manualCtx').value.trim();
+    if (!t) return toast('Enter some context first.', 'error');
+    gameCtx = { type: 'manual', manual: t };
+    document.getElementById('ctxSummary').style.display = 'block';
+  }
+
+  // ── Chat ──────────────────────────────────────────────────────────────────
+  function handleKey(e) { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); } }
+  function autoResize(el) { el.style.height = 'auto'; el.style.height = Math.min(el.scrollHeight, 120) + 'px'; }
+
+  async function sendMessage() {
+    const input = document.getElementById('chatInput'), text = input.value.trim();
+    if (!text || loading) return;
+    input.value = ''; input.style.height = 'auto';
+    doSend(text);
+  }
+  function sendQuick(t) { doSend(t); }
+
+  async function doSend(text) {
+    if (loading) return;
+    loading = true;
+    const wm = document.getElementById('welcomeMsg');
+    if (wm) wm.style.display = 'none';
+    document.getElementById('sendBtn').disabled = true;
+    appendMsg('user', text);
+    msgs.push({ role: 'user', content: text });
+    document.getElementById('typing').classList.add('visible');
+    scrollB();
+    const r = await window.advisor.chat({ messages: msgs, gameContext: gameCtx });
+    document.getElementById('typing').classList.remove('visible');
+    document.getElementById('sendBtn').disabled = false;
+    loading = false;
+    if (r.error) { toast(r.error, 'error'); msgs.pop(); return; }
+    appendMsg('advisor', r.reply);
+    msgs.push({ role: 'assistant', content: r.reply });
+    scrollB();
+  }
+
+  function appendMsg(role, text) {
+    const c = document.getElementById('messages'), d = document.createElement('div');
+    d.className = `message ${role}`;
+    const fmt = text
+      .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+      .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+      .replace(/\*(.+?)\*/g, '<em>$1</em>')
+      .replace(/\n/g, '<br>');
+    d.innerHTML = `<div class="avatar">${role === 'user' ? '👤' : '⬡'}</div><div><div class="sname">${role === 'user' ? 'Commander' : 'Galactic AI Advisor'}</div><div class="bubble">${fmt}</div></div>`;
+    c.appendChild(d); scrollB();
+  }
+
+  function scrollB() { const m = document.getElementById('messages'); m.scrollTop = m.scrollHeight; }
+
+  function clearChat() {
+    msgs = [];
+    const m = document.getElementById('messages');
+    m.innerHTML = '';
+    const w = document.createElement('div'); w.id = 'welcomeMsg'; w.className = 'welcome';
+    w.innerHTML = '<div class="icon">⬡</div><h2>Galactic AI Advisor Standing By</h2><p>Load your save file or describe your situation manually.</p><div class="qps"><button class="qp" onclick="sendQuick(\'Give me a full strategic briefing.\')">Full Briefing</button><button class="qp" onclick="sendQuick(\'Assess my current military situation.\')">Military</button><button class="qp" onclick="sendQuick(\'Analyze my economy and resource balance.\')">Economy</button></div>';
+    m.appendChild(w);
+  }
+
+  function toast(msg, type = 'error') {
+    const t = document.getElementById('toast');
+    t.textContent = msg; t.className = 'toast visible ' + type;
+    setTimeout(() => t.classList.remove('visible'), 4000);
+  }
+
+  // ── Init ──────────────────────────────────────────────────────────────────
+  window.addEventListener('DOMContentLoaded', async () => {
+    const kr = await window.advisor.checkApiKey();
+    if (kr.connected) {
+      document.getElementById('apiDot').className = 'sdot ok';
+      document.getElementById('apiStatus').textContent = kr.fromEnv ? 'Connected (from .env)' : 'Connected';
+      if (kr.fromEnv) document.getElementById('keyRow').style.display = 'none';
+    }
+    await initAutoMonitor();
+  });
+</script>
+</body>
+</html>

@@ -1,0 +1,18 @@
+{
+  "name": "stellaris-advisor",
+  "version": "1.0.0",
+  "description": "AI advisor for Stellaris",
+  "main": "src/main/main.js",
+  "scripts": {
+    "start": "electron .",
+    "dev": "electron . --dev"
+  },
+  "dependencies": {
+    "adm-zip": "^0.5.10",
+    "jomini": "^0.10.0",
+    "openai": "^4.28.0"
+  },
+  "devDependencies": {
+    "electron": "^29.0.0"
+  }
+}
