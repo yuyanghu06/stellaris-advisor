@@ -564,6 +564,31 @@
     .sitlog-chip.blue { background: rgba(37,99,235,0.07); border-color: rgba(37,99,235,0.18); color: var(--accent-blue); }
     .sitlog-rate { font-size: 9px; color: var(--text-muted); margin-left: auto; flex-shrink: 0; padding-left: 4px; }
 
+    /* Timeline */
+    .tl-list { display: flex; flex-direction: column; gap: 3px; }
+    .tl-item {
+      display: flex; align-items: baseline; gap: 7px;
+      padding: 5px 8px; border-radius: 5px;
+      background: var(--bg-deep); border: 1px solid var(--border);
+    }
+    .tl-date {
+      font-family: 'Share Tech Mono', monospace; font-size: 10px;
+      color: var(--text-muted); flex-shrink: 0; width: 68px;
+    }
+    .tl-dot {
+      width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0;
+      margin-top: 1px; align-self: center;
+    }
+    .tl-dot.explore  { background: var(--accent-cyan); }
+    .tl-dot.war      { background: var(--accent-red); }
+    .tl-dot.military { background: #f97316; }
+    .tl-dot.diplo    { background: var(--accent-blue); }
+    .tl-dot.science  { background: #a855f7; }
+    .tl-dot.empire   { background: var(--accent-gold); }
+    .tl-dot.species  { background: var(--accent-green); }
+    .tl-dot.galactic { background: #ec4899; }
+    .tl-label { font-size: 11px; color: var(--text-primary); line-height: 1.3; }
+
     /* Toast */
     .toast {
       position: fixed; bottom: 80px; left: 50%; transform: translateX(-50%);
@@ -752,6 +777,19 @@
         </div>
       </div>
 
+      <div class="rich-panel" id="panel-timeline">
+        <div class="rich-panel-header" onclick="togglePanel('timeline')">
+          <span class="rich-panel-title">Empire Timeline</span>
+          <span class="rich-panel-chevron" id="chevron-timeline">&#9654;</span>
+        </div>
+        <div class="rich-panel-body" id="body-timeline">
+          <div class="rich-panel-empty" id="timeline-empty">No save loaded</div>
+          <div id="timeline-content" style="display:none">
+            <div class="tl-list" id="timeline-list"></div>
+          </div>
+        </div>
+      </div>
+
     </aside>
 
     <main class="chat-area">
@@ -896,6 +934,31 @@
     populateFactions(data.factions || []);
     populateLeaders(data.leaders || []);
     populateSituationLog(data.eventChains || [], data.situations || [], data.situationLog || {});
+    populateTimeline(data.timeline || []);
+  }
+
+  function populateTimeline(events) {
+    const empty   = document.getElementById('timeline-empty');
+    const content = document.getElementById('timeline-content');
+    const list    = document.getElementById('timeline-list');
+    if (!events || events.length === 0) {
+      empty.style.display = 'block';
+      empty.textContent = 'No timeline data';
+      content.style.display = 'none';
+      return;
+    }
+    empty.style.display = 'none';
+    content.style.display = 'block';
+    list.innerHTML = '';
+    for (const e of events) {
+      const row = document.createElement('div');
+      row.className = 'tl-item';
+      row.innerHTML =
+        `<span class="tl-date">${e.date || '?'}</span>` +
+        `<span class="tl-dot ${e.cat || ''}"></span>` +
+        `<span class="tl-label">${e.label || ''}</span>`;
+      list.appendChild(row);
+    }
   }
 
   function populateLeaders(leaders) {
@@ -1377,6 +1440,7 @@
       situations: data.situations || [],
       situationLog: data.situationLog || {},
       eventChains: data.eventChains || [],
+      timeline: data.timeline || [],
       empireNameOverride: prevOverride,
       manualBlocks: prevBlocks
     };
@@ -1464,6 +1528,7 @@
       situations: r.situations || [],
       situationLog: r.situationLog || {},
       eventChains: r.eventChains || [],
+      timeline: r.timeline || [],
       empireNameOverride: prevOverride2,
       manualBlocks: prevBlocks2
     };

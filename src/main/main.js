@@ -296,6 +296,7 @@ async function parseAndExtract(gamestateRaw, metaRaw, fileName) {
   const situations   = extractSituations(gs, playerCountryId);
   const situationLog = extractSituationLog(gs, playerCountryId, pc);
   const eventChains  = extractEventChains(gs, playerCountryId, pc);
+  const timeline     = extractTimeline(gs, playerCountryId, pc, nameMap);
 
   // Clean internal fields before returning
   delete parsed._warParticipants;
@@ -307,7 +308,7 @@ async function parseAndExtract(gamestateRaw, metaRaw, fileName) {
     meta = { date: fmtDate(m.date) || parsed.date, saveName: resolveName(m.name) || fileName || 'Unknown' };
   } catch (e) { /* meta parse optional */ }
 
-  return { parsed, meta, diplomacy, systems, colonies, factions, leaders, situations, situationLog, eventChains };
+  return { parsed, meta, diplomacy, systems, colonies, factions, leaders, situations, situationLog, eventChains, timeline };
 }
 
 // ─── Extraction Helpers ───────────────────────────────────────────────────────
@@ -624,6 +625,100 @@ function extractLeaders(gs, playerCountryId, pc, nameMap) {
   return leaders.slice(0, 50);
 }
 
+// ─── Timeline Extractor ───────────────────────────────────────────────────────
+
+const TIMELINE_DEFS = {
+  // Exploration
+  timeline_first_colony:               { label: 'First Colony',             cat: 'explore' },
+  timeline_new_colony:                 { label: 'New Colony',               cat: 'explore' },
+  timeline_first_gateway:              { label: 'First Gateway',            cat: 'explore' },
+  timeline_first_wormhole:             { label: 'First Wormhole',           cat: 'explore' },
+  timeline_first_astral_rift:          { label: 'First Astral Rift',        cat: 'explore' },
+  timeline_first_arc_site:             { label: 'First Arc Site',           cat: 'explore' },
+  timeline_encountered_leviathan:      { label: 'Leviathan Encountered',    cat: 'explore' },
+  // War
+  timeline_first_war_declared:         { label: 'First War Declared vs',    cat: 'war' },
+  timeline_war_declared_attacker:      { label: 'War Declared vs',          cat: 'war' },
+  timeline_war_declared_defender:      { label: 'War Declared by',          cat: 'war' },
+  timeline_first_war_won:              { label: 'First War Won vs',         cat: 'war' },
+  timeline_war_won:                    { label: 'War Won vs',               cat: 'war' },
+  timeline_destroyed_leviathan:        { label: 'Leviathan Destroyed',      cat: 'war' },
+  // Military
+  timeline_first_100k_fleet:           { label: '100k Fleet Power',         cat: 'military' },
+  timeline_first_big_ship:             { label: 'First Titan/Colossus',     cat: 'military' },
+  // Diplomacy
+  timeline_first_vassal:               { label: 'First Vassal',             cat: 'diplo' },
+  timeline_new_vassal:                 { label: 'New Vassal',               cat: 'diplo' },
+  timeline_first_trade_deal:           { label: 'Trade Deal with',          cat: 'diplo' },
+  timeline_meet_fallen_empire_discover:   { label: 'Fallen Empire Contact', cat: 'diplo' },
+  timeline_meet_fallen_empire_discovered: { label: 'Fallen Empire Contact', cat: 'diplo' },
+  timeline_galactic_community:         { label: 'Galactic Community Founded', cat: 'diplo' },
+  timeline_galactic_community_resolution: { label: 'Resolution Passed',     cat: 'diplo' },
+  timeline_galactic_market:            { label: 'Galactic Market Founded',  cat: 'diplo' },
+  timeline_first_espionage_action:     { label: 'First Espionage Op',       cat: 'diplo' },
+  // Science
+  timeline_first_rare_tech:            { label: 'First Rare Tech',          cat: 'science' },
+  timeline_first_repeatable_tech:      { label: 'Repeatables Unlocked',     cat: 'science' },
+  timeline_first_relic:                { label: 'First Relic',              cat: 'science' },
+  timeline_first_precursor_discovered: { label: 'Precursor Discovered',     cat: 'science' },
+  // Empire
+  timeline_first_ascension_perk:       { label: 'First Ascension Perk',     cat: 'empire' },
+  timeline_elections:                  { label: 'Elections Held',           cat: 'empire' },
+  timeline_change_of_capital:          { label: 'Capital Changed to',       cat: 'empire' },
+  timeline_first_city_planet:          { label: 'First Ecumenopolis',       cat: 'empire' },
+  timeline_first_terraform:            { label: 'First Terraform',          cat: 'empire' },
+  timeline_council_max_expansion:      { label: 'Council Fully Expanded',   cat: 'empire' },
+  timeline_first_leader_destiny_trait: { label: 'Destiny Leader',           cat: 'empire' },
+  // Species
+  timeline_first_intelligent_life:     { label: 'Intelligent Life Found',   cat: 'species' },
+  timeline_first_robot:                { label: 'First Synthetic Built',    cat: 'species' },
+  timeline_first_species_uplifted:     { label: 'Species Uplifted',         cat: 'species' },
+  timeline_first_species_modification: { label: 'Species Modified',         cat: 'species' },
+  // Galactic events
+  timeline_great_khan:                 { label: 'Great Khan Rises',         cat: 'galactic' },
+  timeline_voidworm_plague:            { label: 'Voidworm Plague',          cat: 'galactic' },
+  timeline_kaleidoscope:               { label: 'Kaleidoscope Event',       cat: 'galactic' },
+};
+
+function extractTimeline(gs, playerCountryId, pc, nameMap) {
+  const events    = pc.timeline_events ?? [];
+  const planets   = gs.planets?.planet    ?? {};
+  const galObjs   = gs.galactic_object    ?? {};
+  const SKIP_DEFS = new Set(['timeline_event_year', 'timeline_origin_default']);
+
+  function fmtTlDate(raw) {
+    try {
+      const d = new Date(raw);
+      return d.getFullYear() + '.' +
+        String(d.getMonth() + 1).padStart(2, '0') + '.' +
+        String(d.getDate()).padStart(2, '0');
+    } catch { return '?'; }
+  }
+
+  // Resolve the secondary subject ID from data[]
+  function resolveSubject(def, data) {
+    if (!data || !data.length) return null;
+    // For defender events data[0] is the attacker, not the player
+    const subjectId = String(def === 'timeline_war_declared_defender' ? data[0] : (data[1] ?? data[0]));
+    if (nameMap[subjectId])                       return nameMap[subjectId];
+    if (planets[subjectId]?.name)                 return resolveName(planets[subjectId].name);
+    if (galObjs[subjectId]?.name)                 return resolveName(galObjs[subjectId].name);
+    return null;
+  }
+
+  const result = [];
+  for (const e of (Array.isArray(events) ? events : [])) {
+    if (!e || SKIP_DEFS.has(e.definition)) continue;
+    const def  = TIMELINE_DEFS[e.definition];
+    if (!def) continue;                           // skip unknown/uninteresting defs
+    const date    = fmtTlDate(e.date);
+    const subject = resolveSubject(e.definition, e.data);
+    const label   = subject ? `${def.label} ${subject}` : def.label;
+    result.push({ date, label, cat: def.cat });
+  }
+  return result;
+}
+
 // ─── Situation Log Extractors ─────────────────────────────────────────────────
 
 /**
@@ -910,6 +1005,14 @@ function buildSystemPrompt(gameContext) {
           const status = r.status  ? ` (${r.status})`            : '';
           context += `  ${r.type}${active}${status}${clues}${diff}\n`;
         }
+      }
+    }
+
+    const tl = gameContext.timeline || [];
+    if (tl.length) {
+      context += '\nEMPIRE TIMELINE (chronological):\n';
+      for (const e of tl) {
+        context += `  [${e.date}] (${e.cat}) ${e.label}\n`;
       }
     }
 
